@@ -1,0 +1,100 @@
+---
+title: 'Practical Machine Learning: Course Project'
+author: "Cole Zuber"
+date: "January 11, 2015"
+output: html_document
+---
+
+# Human Activity Recognition
+
+## Introduction
+
+Below is a report detailing a method for predicting human activity based on measurements from wearable accelerometers. The measurements were collected from six male subjects between the ages of 20 and 28 years old. The subjects were wearing accelerometers on their waist, forearm and arm. An accelerometer was also placed on a dumbbell the subjects were using in each activity. The subjects were told to perform five different variants of the dumbbell curl exercise. The first variant (defined as Class A in the dataset) was a correct version of the exercise. The other four variants were improper forms of the exercise: throwing the elbows to the front, lifting the dumbbell only half way up, lowering the dumbbell only halfway down, and throwing the hips to the front (defined by classes B, C, D, and E respectively.) 19,622 measurements were taken in total. The data was provided by a paper titled 'Qualitative Activity Recognition of Weight Lifting Exercises', authored by Eduardo Velloso, Andreas Bulling, Hans Gellersen, Wallace Ugulino and Hugo Fuks.
+
+## Cleaning Data/Preprocessing
+
+A 19622 row data set is provided in 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'. I divided the data into a training and test set.
+
+```{r echo=FALSE}
+library(caret)
+url <- getURL('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv')
+df <- read.csv(text=url)
+set.seed(23)
+inTrain <- createDataPartition(df$classe, p=0.05, list=FALSE)
+training <- df[inTrain,]
+test <- df[-inTrain,]
+```
+
+While there is a slight skew to our predictor variable 'classe' toward the A value, it doesn't seem to be significant enough to affect our prediction.
+
+```{r}
+summary(training$classe)
+```
+
+One issue in the data is the large number of missing data in some of the columns. Of the 13737 observations in the training set, 13461 of them have NA values in 67 columns and missing values in 33 columns.
+
+```{r}
+sum(sapply(training, function(x) any(is.na(x))))
+sum(sapply(training, function(x) any(x=='')), na.rm=TRUE)
+```
+
+To clean the data, I've chosen to remove the columns from the set with large numbers of missing and NA values. Imputing the data using knnImpute would likely be too inaccurate since there are only 276 rows with actual measurements in these columns and 60 columns with accurate measurements. Estimating with euclidean distance with this view observations and this high dimensionality is not possible. I would also hesitate to remove 13461 rows from a dataset with 160 columns since this could lead to severe overfitting. Many of the columns with the large number of NAs and missing values have invalid values or have very low variance, so removing them should have a negligible affect on the predictive power of our algorithm.
+
+The new dataset now has 13737 obs and 60 columns.
+
+```{r}
+training <- training[,sapply(training, function(x) !any(is.na(x) || x==''))]
+test <- test[,names(training)]
+```
+
+Next will remove any variables with low variance as they help very little with prediction.
+
+```{r echo=FALSE}
+training <- training[,-nearZeroVar(training)]
+test <- test[,names(training)]
+```
+
+To determine the model we will use for prediction, we'll use exploratory data anaylsis to view the shape of the data. Below is a histogram of some of the possible predictors in the data set. While some of the predictors have a guassian distribution to them, most are heavily skewed. One of the predictors, magnet_arm_x, has an inverted bell shape to it, making it hard to transform. As a result, a model-based algorithm like linear or quadratic discriminant analysis would probably not be the best for prediction.
+
+```{r echo=FALSE}
+par(mfrow=c(3, 4))
+set.seed(5634)
+for (i in sample(7:58, 12)){
+    hist(training[,i], xlab=names(training)[i])
+}
+```
+
+Another possible option for prediction is logistic regression. This requires the dependent variable to be ordinal. There is no obvious way to rank the classe variable so we can't use regression for prediction.
+
+Since many of the assumptions for the previous prediction methods have failed, it's probably best to use an algorithm like decision trees that needs less assumptions to predict accurately. We can modify the algorithm a step further to increase accuracy by using a random forest.
+
+## Random Forest Prediction
+
+```{r}
+modelFit <- train(training[2:58], training$classe, method="rf")
+```
+Part 4: Algorithms
+    8/12 on boosting to see boosting options.
+    Describe AUC and accuracy measurements.
+    Good idea to plot test results vs number of trees and number of predictors available for splitting at each interior tree node.
+    Exploratory analysis on test set.
+Part 5: Conclusion
+    Summarize the question.
+    Explain the algorithm used.
+    Explain the results.
+    
+Intro
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+summary(cars)
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+plot(cars)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
