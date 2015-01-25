@@ -1,0 +1,99 @@
+---
+title: 'Practical Machine Learning: Course Project'
+author: "Cole Zuber"
+date: "January 11, 2015"
+output: html_document
+---
+
+# Human Activity Recognition
+
+## Introduction
+
+Below is a report detailing a method for predicting human activity based on measurements from wearable accelerometers. The measurements were collected from six male subjects between the ages of 20 and 28 years old. The subjects were wearing accelerometers on their waist, forearm and arm. An accelerometer was also placed on a dumbbell the subjects were using in each activity. The subjects were told to perform five different variants of the dumbbell curl exercise. The first variant (defined as Class A in the dataset) was a correct version of the exercise. The other four variants were improper forms of the exercise: throwing the elbows to the front, lifting the dumbbell only half way up, lowering the dumbbell only halfway down, and throwing the hips to the front (defined by classes B, C, D, and E respectively.) 19,622 measurements were taken in total. The data was provided by a paper titled 'Qualitative Activity Recognition of Weight Lifting Exercises', authored by Eduardo Velloso, Andreas Bulling, Hans Gellersen, Wallace Ugulino and Hugo Fuks.
+
+## Cleaning Data/Preprocessing
+
+A 19622 row data set is provided in 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'.
+
+```{r include=FALSE}
+library(caret)
+library(RCurl)
+```
+
+```{r cache=TRUE}
+url <- getURL('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', cainfo = system.file("CurlSSL","cacert.pem", package="RCurl"))
+df <- read.csv(text=url)
+evalURL <- getURL('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', cainfo = system.file("curlSSL", "cacert.pem", package="RCurl"))
+evalDF <- read.csv(text=evalURL)
+```
+
+One issue in the data is the large number of missing data in some of the columns. Of the 19622 observations in the training set, 19216 of them have missing values in 100 of the columns.
+
+```{r}
+sum(sapply(df, function(x) any(is.na(x) || x=='')), na.rm = TRUE)
+```
+
+It appears that these columns act as summary data for each repetition of the excericse. The end of one repetition of the excercise is marked by the a 'new_window' value equal to 'yes'. Each value of the columns that belong to the corresponding row act as a summary for the data in the previous 'window' (grouped by the 'num_window' variable). It could be possible to incoporate the summary statistics into the data set by propogating them over every row that shares the same window. However the twenty row evaluation dataset is missing its summary statistic in each row. While I could impute the missing values in the eval dataset to help with prediction, it would probably be best to remove the summary columns all together. The new dataset now has 19622 observations with 60 columns (including the variable I am predicting.)
+
+```{r cache=TRUE}
+df <- df[,sapply(df, function(x) !any(is.na(x) || x==''))]
+evalDF <- evalDF[,c(names(df)[1:59], 'problem_id')]
+```
+
+I then removed any columns in the data that are not measurements calculated from the acclerometers with the exception of the classe and user_name columns. The classe column is the variable I am predicting. The user_name column I deemed to be relavant since different users will most likey generate different measurements from the accelerometers doing the same excercise, which could help with prediction.
+
+```{r}
+df <- df[,c(2,8:60)]
+evalDF <- evalDF[,c(2,8:60)]
+```
+
+Next I will remove any variables with low variance in the training set as they help very little with prediction. None of the variable registered as having near-zero variance.
+
+```{r}
+nearZeroVar(df)
+```
+
+To determine the model I will use for prediction, I'll use exploratory data anaylsis to view the shape of the data to test for each model's assumptions. Below is a histogram of some of the possible predictors in the data set. While some of the predictors have a guassian distribution to them, most are heavily skewed. One of the predictors, magnet_arm_x, has an inverted bell shape to it, making it hard to transform. As a result, a model-based algorithm like linear or quadratic discriminant analysis would probably not be the best for prediction.
+
+```{r echo=FALSE}
+par(mfrow=c(3, 4))
+set.seed(5634)
+for (i in sample(7:58, 12)){
+    hist(df[,i], xlab=names(df)[i], main=NULL)
+}
+```
+
+Another possible option for prediction is logistic regression. This requires the dependent variable to be ordinal. There is no obvious way to rank the classe variable so I can't use regression for prediction.
+
+Since many of the assumptions for the previous prediction methods have failed, it's probably best to use an algorithm like decision trees that needs less assumptions to predict accurately. I can modify the algorithm a step further to increase accuracy by using a random forest.
+
+## Random Forest Prediction
+
+I used the train function in the caret package to run my random forest model. I decided on using six different parameter values to train each tree in the random forest and have the train function use the model with the lowest out-of-bag error rate as the final model for prediction.
+
+```{r eval=FALSE}
+set.seed(60)
+grid_rf <- expand.grid(.mtry = c(2, 4, 8, 16, 32, 53))
+modelFit <- train(df[1:53], df$classe, method="rf", tuneGrid = grid_rf)
+```
+
+The model with the smallest error rate is the random forest with individual trees that use 8 parameters. In other words, constructing a Random Forest with trees that predict the classe variable using a random set of 8 predicters provided me with the best out-of-bag error rate (.5%). Because of the bootstrap sampling used in the model, there's no need for cross validation in random forest, making the out-of-bag error rate the unbiased estimator of the test error rate.
+
+I used the model to predict the classes for the 20 observations in the evaluation data set. According to the submission page, all of my predictions were correct.
+
+```{r eval=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+evalPred <- predict(modelFit, evalDF[1:53])
+pml_write_files(evalPred)
+```
+
+## Conclusion
+
+In this project I set on building a model that predicted different variations of a dumbbell curl excercise, both correct and incorrect. I used 52 measurements taken from wearable acclerometers and the name of the subject for prediction. Using a random forest with trees constructed with 8 parameters, I was able to get an out of bag error rate of .5%.
